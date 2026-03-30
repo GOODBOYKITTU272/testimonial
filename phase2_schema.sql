@@ -1,0 +1,14 @@
+-- Phase 2 Schema Enhancement
+-- Run this in your Supabase SQL Editor
+
+ALTER TABLE testimonials
+ADD COLUMN IF NOT EXISTS start_date DATE,
+ADD COLUMN IF NOT EXISTS offer_date DATE,
+ADD COLUMN IF NOT EXISTS salary_range TEXT,
+ADD COLUMN IF NOT EXISTS location TEXT,
+ADD COLUMN IF NOT EXISTS client_source TEXT DEFAULT 'Other',
+ADD COLUMN IF NOT EXISTS applications_sent INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS followups_sent INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS rejections_before_success INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS notes TEXT,
+ADD COLUMN IF NOT EXISTS is_visible BOOLEAN DEFAULT true;
