@@ -67,6 +67,22 @@ export default function ApplyPage() {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image") !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          if (!photo1) { setPhoto1(file); setMessage("Screenshot pasted successfully to Photo 1!"); }
+          else if (!photo2) { setPhoto2(file); setMessage("Screenshot pasted successfully to Photo 2!"); }
+          else if (!photo3) { setPhoto3(file); setMessage("Screenshot pasted successfully to Photo 3!"); }
+          else setMessage("Error: All 3 photo slots are already full!");
+        }
+      }
+    }
+  };
+
   const uploadImage = async (file: File): Promise<string> => {
     const ext = file.name.split('.').pop();
     const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
@@ -142,7 +158,7 @@ export default function ApplyPage() {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8" onPaste={handlePaste}>
           <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
             {/* ─── ROLE CLASSIFICATION ─── */}
@@ -234,20 +250,23 @@ export default function ApplyPage() {
             </div>
 
             {/* ─── PROOF SCREENSHOTS ─── */}
-            <SectionHeader title="Proof Screenshots" subtitle="Upload images only — stored securely in your bucket." />
+            <SectionHeader title="Proof Screenshots" subtitle="Click 'Choose File' or just press Ctrl+V to paste a screenshot directly into an empty slot!" />
             {[
-              { label: "Photo 1 — Application Email", setter: setPhoto1 },
-              { label: "Photo 2 — Thanks Email", setter: setPhoto2 },
-              { label: "Photo 3 — Interview Invite", setter: setPhoto3 },
-            ].map(({ label, setter }) => (
+              { label: "Photo 1 — Application Email", file: photo1, setter: setPhoto1 },
+              { label: "Photo 2 — Thanks Email", file: photo2, setter: setPhoto2 },
+              { label: "Photo 3 — Interview Invite", file: photo3, setter: setPhoto3 },
+            ].map(({ label, file, setter }) => (
               <div key={label} className="col-span-1 md:col-span-2">
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{label}</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setter(e.target.files?.[0] || null)}
-                  className="w-full border border-gray-200 bg-gray-50 rounded-lg p-2 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                />
+                <div className="flex items-center gap-3">
+                  <input
+                    type="file"
+                    accept="image/png, image/jpeg, image/jpg, image/webp"
+                    onChange={(e) => setter(e.target.files?.[0] || null)}
+                    className="flex-1 w-full border border-gray-200 bg-gray-50 rounded-lg p-2 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                  />
+                  {file && <span className="bg-green-100 text-green-800 text-xs font-bold px-3 py-2 rounded-lg whitespace-nowrap">Image Attached ✅</span>}
+                </div>
               </div>
             ))}
 
