@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { fetchApplyWizzClient } from "@/app/actions";
 
 const jobRoles = [
   "Active Directory","Anti Money Laundering (AML)","Bioinformatics for UK","Biotechnology",
@@ -62,10 +63,32 @@ export default function ApplyPage() {
   const [photo3, setPhoto3] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  
+  // API Fetch State
+  const [applywizzId, setApplywizzId] = useState("");
+  const [isFetchingClient, setIsFetchingClient] = useState(false);
+  const [fetchError, setFetchError] = useState("");
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
+
+  useEffect(() => {
+    if (formData.application_date && formData.interview_date) {
+      const start = new Date(formData.application_date);
+      const end = new Date(formData.interview_date);
+      const diffTime = end.getTime() - start.getTime();
+      const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+      
+      if (formData.journey_duration_days !== String(diffDays)) {
+        setFormData(prev => ({ ...prev, journey_duration_days: String(diffDays) }));
+      }
+    } else if (!formData.application_date || !formData.interview_date) {
+        if (formData.journey_duration_days !== "") {
+            setFormData(prev => ({ ...prev, journey_duration_days: "" }));
+        }
+    }
+  }, [formData.application_date, formData.interview_date, formData.journey_duration_days]);
 
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -144,6 +167,42 @@ export default function ApplyPage() {
     </div>
   );
 
+  const handleFetchClient = async () => {
+    if (!applywizzId) return;
+    
+    // Completely bulletproof the ID against double "AWL-" prefixes from stale state or weird pastes
+    const cleanId = applywizzId.replace(/\D/g, '');
+    if (!cleanId) return;
+
+    setIsFetchingClient(true);
+    setFetchError("");
+    try {
+      const parseData = await fetchApplyWizzClient(`AWL-${cleanId}`);
+      
+      const c = parseData.client;
+      setFormData(prev => {
+        const rawSalary = String(c.expected_salary || c.salary_range || "");
+        const formattedSalary = rawSalary 
+          ? (/^\d/.test(rawSalary) ? `$${rawSalary}` : rawSalary)
+          : prev.salary_range;
+
+        return {
+          ...prev,
+          client_name: c.full_name || prev.client_name,
+          email: c.personal_email || c.company_email || prev.email,
+          job_role: c.job_role_preferences?.[0] || prev.job_role,
+          salary_range: formattedSalary,
+          start_date: c.onboardingdate ? c.onboardingdate.split('T')[0] : (c.created_at ? c.created_at.split('T')[0] : prev.start_date)
+        };
+      });
+      setFetchError("");
+    } catch (err: any) {
+      setFetchError(err.message || "Could not fetch client data.");
+    } finally {
+      setIsFetchingClient(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8 font-sans">
       <div className="max-w-3xl mx-auto">
@@ -161,13 +220,41 @@ export default function ApplyPage() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8" onPaste={handlePaste}>
           <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
+            {/* ─── QUICK FILL VIA API ─── */}
+            <div className="col-span-1 md:col-span-2 bg-blue-50/50 p-6 rounded-xl border border-blue-100 mb-2">
+              <h3 className="font-bold text-blue-900 text-lg mb-2">⚡ Quick Fill Client Details</h3>
+              <p className="text-sm text-blue-700 mb-4">Enter the client's ApplyWizz ID number to auto-fill their details.</p>
+              
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex-1 flex items-center border border-blue-200 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 bg-white shadow-inner">
+                  <span className="bg-blue-50 text-blue-800 font-mono font-bold px-4 py-3 border-r border-blue-200 select-none">AWL-</span>
+                  <input 
+                    type="text" 
+                    placeholder="49" 
+                    value={applywizzId}
+                    onChange={(e) => setApplywizzId(e.target.value.replace(/\D/g, ''))}
+                    className="w-full p-3 outline-none font-mono font-bold text-blue-900" 
+                  />
+                </div>
+                <button 
+                  type="button" 
+                  onClick={handleFetchClient}
+                  disabled={isFetchingClient || !applywizzId}
+                  className="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-700 transition disabled:opacity-50 whitespace-nowrap shadow-sm cursor-pointer"
+                >
+                  {isFetchingClient ? "Fetching..." : "Fetch Client Data"}
+                </button>
+              </div>
+              {fetchError && <p className="text-red-500 text-sm mt-3 font-semibold">⚠️ {fetchError}</p>}
+            </div>
+
             {/* ─── ROLE CLASSIFICATION ─── */}
             <div className="col-span-1 md:col-span-2">
               <h3 className="font-bold text-gray-800 text-lg mb-4">Role Classification</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="col-span-1 md:col-span-2">
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Job Role <span className="text-red-500">*</span></label>
-                  <select name="job_role" value={formData.job_role} onChange={handleChange} required className="w-full border border-gray-300 rounded-lg p-3 bg-white text-gray-700">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Job Role <span className="text-red-500">*</span> <span className="text-xs text-blue-500 ml-2 font-normal">(Auto-filled, Read Only)</span></label>
+                  <select name="job_role" value={formData.job_role} onChange={handleChange} required className="w-full border border-gray-300 rounded-lg p-3 text-gray-700 bg-gray-100 cursor-not-allowed pointer-events-none" tabIndex={-1}>
                     <option value="">Select applied role...</option>
                     {jobRoles.map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
@@ -192,19 +279,16 @@ export default function ApplyPage() {
             {/* ─── CLIENT DETAILS ─── */}
             <SectionHeader title="Client Details" />
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Client Email <span className="text-red-500">*</span></label>
-              <input type="email" name="email" value={formData.email} onChange={handleChange} required className="w-full border border-gray-300 rounded-lg p-3" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Client Email <span className="text-red-500">*</span> <span className="text-xs text-blue-500 ml-2 font-normal">(Auto-filled, Read Only)</span></label>
+              <input type="email" name="email" value={formData.email} readOnly className="w-full border border-gray-300 rounded-lg p-3 text-gray-700 bg-gray-100 cursor-not-allowed focus:outline-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Client Name <span className="text-red-500">*</span></label>
-              <input type="text" name="client_name" value={formData.client_name} onChange={handleChange} required className="w-full border border-gray-300 rounded-lg p-3" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Client Name <span className="text-red-500">*</span> <span className="text-xs text-blue-500 ml-2 font-normal">(Auto-filled, Read Only)</span></label>
+              <input type="text" name="client_name" value={formData.client_name} readOnly className="w-full border border-gray-300 rounded-lg p-3 text-gray-700 bg-gray-100 cursor-not-allowed focus:outline-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Salary Range (Target)</label>
-              <select name="salary_range" value={formData.salary_range} onChange={handleChange} className="w-full border border-gray-300 rounded-lg p-3 bg-white text-gray-700">
-                <option value="">Select range...</option>
-                {salaryRanges.map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Expected Salary <span className="text-xs text-blue-500 ml-2 font-normal">(Auto-filled, Read Only)</span></label>
+              <input type="text" name="salary_range" value={formData.salary_range} readOnly placeholder="e.g. $70,000 or 50000" className="w-full border border-gray-300 rounded-lg p-3 text-gray-700 bg-gray-100 cursor-not-allowed focus:outline-none" />
             </div>
 
             {/* ─── COMPANY DETAILS ─── */}
@@ -225,8 +309,8 @@ export default function ApplyPage() {
             {/* ─── KEY DATES ─── */}
             <SectionHeader title="Key Dates" subtitle="Track the full journey timeline" />
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date (ApplyWizz Engagement)</label>
-              <input type="date" name="start_date" value={formData.start_date} onChange={handleChange} className="w-full border border-gray-300 rounded-lg p-3 text-gray-700" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Onboarding Date <span className="text-xs text-blue-500 ml-2">(Auto-filled, Read Only)</span></label>
+              <input type="date" name="start_date" value={formData.start_date} readOnly className="w-full border border-gray-300 rounded-lg p-3 text-gray-700 bg-gray-100 cursor-not-allowed focus:outline-none" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Application Sent Date <span className="text-red-500">*</span></label>
@@ -245,8 +329,8 @@ export default function ApplyPage() {
               <input type="date" name="offer_date" value={formData.offer_date} onChange={handleChange} className="w-full border border-gray-300 rounded-lg p-3 text-gray-700" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Journey Duration (Days) <span className="text-red-500">*</span></label>
-              <input type="number" name="journey_duration_days" value={formData.journey_duration_days} onChange={handleChange} required className="w-full border border-gray-300 rounded-lg p-3" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Journey Duration (Days) <span className="text-red-500">*</span> <span className="text-xs text-blue-500 ml-2 font-normal">(Auto-calculated, Read Only)</span></label>
+              <input type="number" name="journey_duration_days" value={formData.journey_duration_days} readOnly className="w-full border border-gray-300 rounded-lg p-3 bg-gray-100 cursor-not-allowed focus:outline-none" />
             </div>
 
             {/* ─── PROOF SCREENSHOTS ─── */}
